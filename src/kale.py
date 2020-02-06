@@ -2,11 +2,11 @@
 Single-threaded web application service framework designed as an alternative to
 ordinary desktop application development. See http://github.com/kjosib/kale
 """
-import socket, urllib.parse, random, sys, html, traceback, re, operator, os
-from typing import List, Tuple, Dict, Iterable, Match
 
-STATUS_BYTES = {
-}
+__ALL__ = ['serve_http', 'Request', 'Template', 'Response', 'Router', 'StaticFolder']
+
+import socket, urllib.parse, random, sys, html, traceback, re, operator, os
+from typing import List, Tuple, Dict, Iterable, Match, Callable
 
 class ProtocolError(Exception): """ The browser did something wrong. """
 
@@ -149,7 +149,10 @@ class Request:
 		self.headers = headers
 		self.url = urllib.parse.urlparse(uri)
 		self.path = self.url.path[1:].split('/') # Non-empty paths always start with a slash, so skip it.
-		self.mount_depth = 0 # Useful for hierarchical applications.
+		# The following bits collaborate with the Router class to provide a semblance
+		# of a virtual path hierarchy into which you can mount functionality.
+		self.mount_depth = 0 # How deep is the root of the mount which is handling this request?
+		self.args = () # Actual parameters to mount-path wildcards. Filled in for Router.delegate(...) mounts.
 		self.GET = Bag(urllib.parse.parse_qsl(self.url.query, keep_blank_values=True))
 		self.POST = Bag()
 		if headers.get('content-type') == 'application/x-www-form-urlencoded':
@@ -189,14 +192,21 @@ class Request:
 		if len(normal) < len(path):
 			return Response.redirect(self.root_url(normal, self.GET or None))
 	
-	def root_url(self, path, query):
+	def root_url(self, path, query=None):
 		qp = urllib.parse.quote_plus
 		url = urllib.parse.quote('/'+'/'.join(path))
-		if query is not None: url += '?'+'&'.join(qp(k)+'='+qp(v) for k,v in query.items())
+		if query: url += '?'+'&'.join(qp(k)+'='+qp(v) for k,v in query.items())
 		return url
 		
 	def app_url(self, path:List[str], query=None):
 		return self.root_url(self.path[:self.mount_depth] + path, query)
+	
+	def path_suffix(self) -> List[str]:
+		return self.path[self.mount_depth:]
+	
+	def has_suffix(self) -> bool:
+		" Does this Request have additional path components after the mount? "
+		return self.mount_depth < len(self.path)
 	
 	@staticmethod
 	def __is_normal(path: List[str]):
@@ -290,7 +300,7 @@ class Response:
 	TEMPLATE_GENERIC = Template("""
 	<!DOCTYPE HTML>
 	<html><head><title>{title}</title></head>
-	<body> <h1>{title}!</h1>
+	<body> <h1>{title}</h1>
 	{.body}
 	<hr/>
 	<pre style="background:black;color:green;padding:20px;font-size:15px">Python Version: {version}\r\nKale version 0.0.1</pre>
@@ -327,7 +337,7 @@ class Response:
 	@staticmethod
 	def swear(request: Request, detail, *, code=500) -> "Response":
 		gripe = Response.TEMPLATE_GRIPE(command=request.command, url=request.url.geturl()),
-		return Response.generic([gripe, detail], code=code, title=random.choice(Response.MINCED_OATHS))
+		return Response.generic([gripe, detail], code=code, title=random.choice(Response.MINCED_OATHS)+'!')
 	
 	@staticmethod
 	def redirect(url) -> "Response":
@@ -373,21 +383,49 @@ class Router:
 		# real applications won't stress this too hard.
 		path, node, i, found, best, backtrack = request.path, self.root, 0, None, -1, []
 		while True:
-			if node.handler is not None and i > best: found, best = node.handler, i
+			if node.entry is not None and i > best: found, best = node.entry, i
 			if self.WILDCARD in node.kids: backtrack.append((node.kids[self.WILDCARD], i + 1))
 			if i<len(path) and path[i] in node.kids: node, i = node.kids[path[i]], i + 1
 			elif backtrack: node, i = backtrack.pop()
 			elif found is None: return Response.generic(code=404)
 			else:
-				request.mount_depth = best # This is useful for handlers that resemble folders...
-				return found(request)
+				request.mount_depth = best
+				handler, wildcards = found
+				request.args = [path[i] for i in wildcards]
+				return handler(request)
 	
-	def __mount(self, path, handler):
-		""" Internal method for insertion into virtual-path tree. """
-		node = self.root
-		for item in path: node = node.dig(item)
-		assert node.handler is None
-		node.handler = handler
+	def delegate(self, where:str, handler:Callable[[Request], Response]):
+		"""
+		This is the most-general way to attach functionality to an URL-path,
+		potentially with wildcards. This is where to document how virtual path
+		specifiers work.
+		
+		The empty string means the absolute root folder, not its index.
+		Any other string must begin with a slash. Leading slashes are removed,
+		and then the string is broken into path components.
+		"""
+		node, wildcards = self.root, []
+		if where != '':
+			assert where.startswith('/'), "Non-root mount points begin with a slash."
+			path = where.lstrip('/').split('/')
+			assert all(path[:-1]), "Please do not embed blank components in your virtual paths."
+			for index, item in enumerate(path):
+				assert not item.startswith('.'), "Path components beginning with dots are reserved."
+				if item == self.WILDCARD: wildcards.append(index)
+				node = node.dig(item)
+		assert node.entry is None, "You've previously mounted something at this same path."
+		node.entry = (handler, tuple(wildcards))
+	
+	def delegate_folder(self, where:str, handler:Callable[[Request], Response]):
+		"""
+		Say you've a handler that expects to be a folder. Then there is certain
+		shim code in common. This provides that shim.
+		"""
+		assert where.endswith('/'), "Services mount at a folder, not a file. (End virtual-path with a slash.)"
+		def shim(request:Request) -> Response:
+			if request.has_suffix(): return handler(request)
+			else: return Response.redirect(request.app_url([''], request.GET))
+		self.delegate(where[:-1], shim)
 
 	def function(self, where:str):
 		"""
@@ -398,74 +436,106 @@ class Router:
 		in 501 Not Implemented. To support POST you'll need to write a class
 		and decorate it with either @servlet('...') or @service('...').
 		"""
-		path, wild = self.__analyze_mountpoint(where)
 		def decorate(fn):
 			def proxy(request:Request):
-				if len(request.path) == request.mount_depth and request.command == 'GET':
-					return fn(*wild(request.path), **request.GET.single)
+				if request.command == 'GET' and not request.has_suffix():
+					return fn(*request.args, **request.GET.single)
 				else:
 					return Response.generic(501)
-			self.__mount(path, proxy)
+			self.delegate(where or '/', proxy)
+			if where.endswith('/') and where != '/':
+				self.delegate_folder(where, lambda x:Response.generic(code=404))
 			return fn
 		return decorate
 	
-	def __analyze_mountpoint(self, where:str):
-		""" A common factor to several publish-type decorator methods. """
-		if where.startswith('/'): where = where[1:]
-		path = where.split('/') # Guaranteed to have at least one component.
-		assert all(path[:-1]), "Please do not put blank components in your virtual paths."
-		wildcard_indices = tuple(i for i, p in enumerate(path) if p == self.WILDCARD)
-		return path, lambda a:[a[i] for i in wildcard_indices]
-	
-	def servlet(self, where, allow_subpages=False):
+	def servlet(self, where, allow_suffix=False):
 		"""
 		Wildcards in the path become positional arguments to the constructor
 		for the class this expects to decorate. Then a do_GET or do_POST
 		method gets called with the actual `Request` object as a parameter.
 		"""
-		path, wild = self.__analyze_mountpoint(where)
 		def decorate(cls):
 			assert isinstance(cls, type), type(cls)
 			def servlet_handler(request:Request):
-				if len(request.path) == request.mount_depth or allow_subpages:
-					instance = cls(*wild(request.path))
+				if (not request.has_suffix()) or allow_suffix:
+					instance = cls(*request.args)
 					method = getattr(instance, 'do_' + request.command, None)
 					if method is not None:
 						return method(request)
 				return Response.generic(501)
-			self.__mount(path, servlet_handler)
+			self.delegate(where, servlet_handler)
 			return cls
 		return decorate
 	
-	def service(self, where):
+	def service(self, where:str):
 		"""
 		Similar to servlet, but one major difference: This expects
 		to service an entire (virtual) folder using instance methods
 		named like do_GET_this or do_POST_that.
 		"""
-		path, wild = self.__analyze_mountpoint(where)
-		assert path[-1] == '', "Services mount at a folder, not a file. (End virtual-path with a slash.)"
-		path.pop()
+		assert where.endswith('/'), "Services mount at a folder, not a file. (End virtual-path with a slash.)"
 		def decorate(cls):
 			assert isinstance(cls, type), type(cls)
 			def service_handler(request:Request):
-				appdepth = len(request.path) - request.mount_depth
-				if appdepth == 1:
-					instance = cls(*wild(request.path))
-					name = request.path[request.mount_depth]
+				suffix = request.path_suffix()
+				if len(suffix) == 1:
+					instance = cls(*request.args)
+					name = suffix[0]
 					method = getattr(instance, 'do_' + request.command+"_"+name, None)
-					if method is not None:
-						return method(request)
-				elif appdepth == 0:
-					return Response.redirect(request.app_url([''], request.GET))
-				return Response.generic(501)
-				
-	
+					return Response.generic(404) if method is None else method(request)
+				else: return Response.generic(501)
+			self.delegate_folder(where, service_handler)
+		return decorate
+
+
+
 class RouteNode:
 	def __init__(self):
-		self.handler, self.kids = None, {}
+		self.entry, self.kids = None, {}
 	def dig(self, label):
 		try: return self.kids[label]
 		except KeyError:
 			self.kids[label] = it = RouteNode()
 			return it
+
+class StaticFolder:
+	"""
+	A simple handler to present the contents of a filesystem folder
+	to the browser over HTTP. It forbids path components that begin
+	with a dot or underscore as a simple safety measure. Attach it
+	to your router via `delegate_folder`.
+	"""
+	
+	LINK = Template("""<li><a href="{name}">{name}</a></li>\r\n""")
+	
+	@staticmethod
+	def forbid(component):
+		return component[0] in '._'
+	
+	def __init__(self, real_path):
+		self.root = real_path
+	
+	def __call__(self, request:Request):
+		suffix = request.path_suffix()
+		want_folder = suffix[-1] == ''
+		if want_folder: suffix.pop()
+		if any(map(StaticFolder.forbid, suffix)): return Response.generic(code=403)
+		local_path = os.path.join(self.root, *  suffix)
+		try:
+			if want_folder:
+				up = StaticFolder.LINK(name='..') if len(request.path) > 1 else b''
+				body = [
+					StaticFolder.LINK(name=fn+['', '/'][os.path.isdir(os.path.join(local_path,fn))])
+					for fn in os.listdir(local_path)
+					if not StaticFolder.forbid(fn)
+				]
+				return Response.generic(
+					['<ul>', up, body, '</ul>'],
+					title='Showing Folder /'+'/'.join(request.path[:-1]),
+				)
+			else:
+				with open(local_path, 'rb') as fh:
+					return Response.plain_text(fh.read())
+		except OSError:
+			return Response.generic(code=404)
+	

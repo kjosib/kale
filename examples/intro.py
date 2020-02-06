@@ -41,7 +41,7 @@ tally = 0
 # Aha! But what if we want our function to take parameters?
 # There are a couple ways to achieve this. One handy method is
 # wildcard paths. Look at this example:
-@app.function('add/*/*')
+@app.function('/add/*/*')
 def add(a,b):
 	a,b = float(a), float(b)
 	return Response.plain_text([
@@ -53,7 +53,7 @@ def add(a,b):
 # a chance someone might not supply that argument, make sure to code
 # a default value in your function definition. For example, the following
 # exposes a (sham) search function.
-@app.function('search')
+@app.function('/search')
 def search(q=''):
 	import html
 	return """
