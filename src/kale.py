@@ -6,11 +6,20 @@ ordinary desktop application development. See http://github.com/kjosib/kale
 __ALL__ = ['serve_http', 'Request', 'Template', 'Response', 'Router', 'StaticFolder']
 
 import socket, urllib.parse, random, sys, html, traceback, re, operator, os
-from typing import List, Tuple, Dict, Iterable, Match, Callable
+from typing import List, Dict, Iterable, Callable, Optional
 
 class ProtocolError(Exception): """ The browser did something wrong. """
 
-def serve_http(handle, *, port=8080, address='127.0.0.1', ):
+def serve_http(handle, *, port=8080, address='127.0.0.1', start:Optional[str]=''):
+	"""
+	This is the main-loop entry point for kale.
+	:param handle: function from `Request` to `Response` or suitable page data.
+	:param port: self-explanatory
+	:param address: In case you desperately want to serve remote traffic, change this.
+	:param start: Where in the hierarchy shall we open a browser? If None, don't.
+            NB: If something goes wrong binding a socket, we shan't open a browser...
+	:return: only if the handler ever sets the `shutdown` flag in a response.
+	"""
 	log_lines = {
 		code: "<--  %d %s"%(code, str(reason, 'UTF-8', errors='replace'))
 		for code, reason in Response.REASON.items()
@@ -21,11 +30,13 @@ def serve_http(handle, *, port=8080, address='127.0.0.1', ):
 			print(log_lines[response.code])
 		except:
 			print("Failed to send.")
+			traceback.print_exc()
 	
 	server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 	server.bind((address, port))
-	os.startfile('http://%s:%d'%(address, port))
 	server.listen(1)
+	if start is not None:
+		os.startfile('http://%s:%d/%s'%(address, port, start.lstrip('/')))
 	print("Listening...")
 	alive = True
 	while alive:
@@ -156,7 +167,7 @@ class Request:
 		self.GET = Bag(urllib.parse.parse_qsl(self.url.query, keep_blank_values=True))
 		self.POST = Bag()
 		if headers.get('content-type') == 'application/x-www-form-urlencoded':
-			self.POST.update(urllib.parse.parse_qsl(str(payload, 'UTF-8'), keep_blank_values=True, max_num_fields=10_000))
+			self.POST.update(urllib.parse.parse_qsl(str(payload, 'UTF-8'), keep_blank_values=True))
 		elif payload is not None:
 			print("Command:", command, uri, protocol)
 			print("Headers:", self.headers)
@@ -482,14 +493,15 @@ class Router:
 					instance = cls(*request.args)
 					name = suffix[0]
 					method = getattr(instance, 'do_' + request.command+"_"+name, None)
-					return Response.generic(404) if method is None else method(request)
-				else: return Response.generic(501)
+					if method: return method(request)
+				return Response.generic(code=501)
 			self.delegate_folder(where, service_handler)
 		return decorate
 
 
 
 class RouteNode:
+	""" Just a simple tree node. Nothing to see here. Move along. """
 	def __init__(self):
 		self.entry, self.kids = None, {}
 	def dig(self, label):
