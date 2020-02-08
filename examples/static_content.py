@@ -16,16 +16,16 @@ your web browser.
 """
 
 import os
-import kale
+import kali
 
-app = kale.Router()
+app = kali.Router()
 
 # This is how it's done:
-app.delegate_folder("/static/", kale.StaticFolder(os.path.dirname(__file__)))
+app.delegate_folder("/static/", kali.StaticFolder(os.path.dirname(__file__)))
 
 
 # This is enough to have an index page.
 @app.function('/')
 def hello(): return __doc__
 
-kale.serve_http(app)
+kali.serve_http(app)

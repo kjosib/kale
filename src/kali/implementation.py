@@ -1,9 +1,9 @@
 """
 Single-threaded web application service framework designed as an alternative to
-ordinary desktop application development. See http://github.com/kjosib/kale
+ordinary desktop application development. See http://github.com/kjosib/kali
 """
 
-__ALL__ = ['serve_http', 'Request', 'Template', 'Response', 'Router', 'StaticFolder']
+__all__ = ['serve_http', 'Request', 'Template', 'Response', 'Router', 'StaticFolder']
 
 import socket, urllib.parse, random, sys, html, traceback, re, operator, os
 from typing import List, Dict, Iterable, Callable, Optional
@@ -12,7 +12,7 @@ class ProtocolError(Exception): """ The browser did something wrong. """
 
 def serve_http(handle, *, port=8080, address='127.0.0.1', start:Optional[str]=''):
 	"""
-	This is the main-loop entry point for kale.
+	This is the main-loop entry point for kali.
 	:param handle: function from `Request` to `Response` or suitable page data.
 	:param port: self-explanatory
 	:param address: In case you desperately want to serve remote traffic, change this.
@@ -314,7 +314,7 @@ class Response:
 	<body> <h1>{title}</h1>
 	{.body}
 	<hr/>
-	<pre style="background:black;color:green;padding:20px;font-size:15px">Python Version: {version}\r\nKale version 0.0.1</pre>
+	<pre style="background:black;color:green;padding:20px;font-size:15px">Python Version: {version}\r\nKali version 0.0.1</pre>
 	</body></html>
 	""")
 	

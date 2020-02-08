@@ -1,4 +1,4 @@
-# kale
+# kali
 Simple, reliable, single-threaded HTTP service in Python. Aimed at serving web application to
 localhost as alternative to desktop application development.
 
@@ -50,5 +50,3 @@ Therefore:
     the Windows command line by, for example, `demo intro`. If you're on Linux/Mac/Unix,
     then feel free to contribute a suitable shell script.
 
-7. The actual module is all one file, so it should be easy to package up for PyPI.
-    Until that happens, you can get it here.

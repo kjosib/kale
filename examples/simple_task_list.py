@@ -19,9 +19,9 @@ point right now.
 </html>
 """
 
-import kale
+import kali
 
-app = kale.Router()
+app = kali.Router()
 
 # For the sake of this example, I'll define a task as a pair of
 # <boolean, string> with rather unsurprising semantics. Rather than
@@ -36,24 +36,24 @@ TO_DO = [
 
 # Some HTML templates are appropriate for simple presentation.
 # Here's a generic background page for the app.
-page = kale.Template(__doc__)
+page = kali.Template(__doc__)
 
 # Surely there will be cause for display of a list of current items,
 # and the ability to check them off as you go. To that end, let's have
 # a couple of templates. But first....
-kale.Template.REGISTRY[':class'] = ('todo', 'complete').__getitem__
+kali.Template.REGISTRY[':class'] = ('todo', 'complete').__getitem__
 # Note the middle line in the template below, what says "{state:class}".
 # The bit above it what makes that work. In theory you could make nice
 # formatting for numbers, or really whatever you like. Think of it like
 # being able to add custom tags maybe? Anyway, back to the templates:
-line = kale.Template("""
+line = kali.Template("""
 <li>
 	[<a href="/task/{id}/toggle">toggle</a>]
 	<span class="{state:class}">{text}</span>
 	[<a href="/task/{id}/edit">edit</a>]
 </li>
 """)
-todo_body = kale.Template("""
+todo_body = kali.Template("""
 <p>Simple To-Do List:</p>
 <ol>{.items}</ol>
 <p><a href="new">New entry</a></p>
@@ -69,7 +69,7 @@ def home():
 
 
 # We need a simple form for adding tasks...
-task_form = kale.Template("""
+task_form = kali.Template("""
 	<form method="post">
 	<input type="text" name="task" value="{task}" />
 	<input type="submit" value="{label}">
@@ -79,14 +79,14 @@ task_form = kale.Template("""
 # The simplest way to serve up a form is to register a servlet, as follows:
 @app.servlet('/new')
 class NewEntry:
-	def do_GET(self, rq:kale.Request):
+	def do_GET(self, rq:kali.Request):
 		return page(body=task_form(task="", label="Add Entry"))
 	
-	def do_POST(self, rq:kale.Request):
+	def do_POST(self, rq:kali.Request):
 		# In a real application, you'd have some error checking here...
 		task = rq.POST['task']
 		if task: TO_DO.append((False, task))
-		return kale.Response.redirect('/')
+		return kali.Response.redirect('/')
 
 # Another alternative is a full-service ... service. Pun intended.
 # This is sort of a multiplexed servlet: a closely related group of
@@ -96,23 +96,23 @@ class TaskController:
 	def __init__(self, task_id):
 		self.id = int(task_id)
 		
-	def do_GET_toggle(self, rq:kale.Request):
+	def do_GET_toggle(self, rq:kali.Request):
 		done, task = TO_DO[self.id]
 		TO_DO[self.id] = (not done, task)
-		return kale.Response.redirect('/')
+		return kali.Response.redirect('/')
 	
-	def do_GET_edit(self, rq:kale.Request):
+	def do_GET_edit(self, rq:kali.Request):
 		done, task = TO_DO[self.id]
 		return page(body=task_form(task=task, label="Edit Entry"))
 	
-	def do_POST_edit(self, rq:kale.Request):
+	def do_POST_edit(self, rq:kali.Request):
 		done, task = TO_DO[self.id]
 		if rq.POST['task']: TO_DO[self.id] = (done, rq.POST['task'])
 		else: TO_DO.pop(self.id)
-		return kale.Response.redirect('/')
+		return kali.Response.redirect('/')
 
 
 # Don't forget to actually start the server.
-kale.serve_http(app)
+kali.serve_http(app)
 
 # Thanks for reading.

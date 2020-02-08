@@ -1,16 +1,16 @@
 """
 This is your super-simple introductory example of how to get started.
 
-The kale.py module must be in your PYTHONPATH environment variable.
+The kali module must be in your PYTHONPATH environment variable.
 That happens automatically if you use the demo.bat script at the
 project root, or configure your IDE to consider ../src as "sources root".
 """
 
-from kale import Response, serve_http, Router
+from kali import Response, serve_http, Router
 
 # Any web application, you're going to be serving up different pages.
 # You need a way to associate virtual-paths (in the URI hierarchy)
-# with specific bits of code that you write. The kale.Router object
+# with specific bits of code that you write. The kali.Router object
 # is that way. It's basically the backbone of publishing your app.
 app = Router()
 
@@ -20,7 +20,7 @@ app = Router()
 def trivial():
 	"""
 	Normally you would either return a full HTML document,
-	or a kale.Response object. Note that a response can contain
+	or a kali.Response object. Note that a response can contain
 	bytes, or strings, or a list of these, or a list of those...
 	Basically anything iterable gets recursively flattened,
 	automatically, somewhere on the way to the browser.

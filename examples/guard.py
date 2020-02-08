@@ -4,10 +4,10 @@ application doesn't accidentally leave the database hanging. Fortunately, there
 is an easy solution.
 """
 import sqlite3
-from kale import Response, Router, serve_http
+from kali import Response, Router, serve_http
 
 # Let's say you're delivering some sort of application experience over the
-# localhost web, as `kale` is designed for. Somewhere near the top of your
+# localhost web, as `kali` is designed for. Somewhere near the top of your
 # main program, you instantiate an application router as follows:
 app = Router()
 
