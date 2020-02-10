@@ -44,7 +44,6 @@ def serve_http(handle, *, port=8080, address='127.0.0.1', start:Optional[str]=''
 	while alive:
 		(client, address) = server.accept()
 		print("Accepted...")
-		client.settimeout(1)
 		try: request = Request.from_reader(ClientReader(client))
 		except socket.timeout: print("Timed out.") # No reply; just hang up and move on.
 		except ProtocolError as pe:
@@ -63,11 +62,13 @@ def serve_http(handle, *, port=8080, address='127.0.0.1', start:Optional[str]=''
 
 class ClientReader:
 	"""
-	This class exists because localhost connections tend to arrive out of sequence, so
-	having a
+	This class exists to encapsulate specific phases of reading request data
+	from a socket in light of the particular difficulties posed by the
+	requirement to operate with a single thread.
 	"""
 	def __init__(self, client):
 		self.client = client
+		client.settimeout(1)
 		self.blob = client.recv(4096) # Try to pick up the entire request in one (notional) packet.
 		self.start = 0
 		self.waited = False
