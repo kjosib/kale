@@ -316,7 +316,7 @@ class SubAssembly(AbstractTemplate):
 	larger templates. Normally you won't use this directly, but will instead
 	use the "assembly" method on the base template.
 	"""
-	def __init__(self, base:AbstractTemplate, bindings:Dict[str, (str, AbstractTemplate)]):
+	def __init__(self, base:AbstractTemplate, bindings:dict):
 		self.base = base
 		self.bindings = {
 			key: Template(value) if isinstance(value, str) else value
@@ -604,3 +604,4 @@ class StaticFolder:
 		except OSError:
 			return Response.generic(code=404)
 	
+

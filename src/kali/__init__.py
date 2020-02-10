@@ -5,4 +5,5 @@ to desktop application development.
 """
 
 from .implementation import *
+from . import forms
 __all__ = implementation.__all__
