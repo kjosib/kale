@@ -3,7 +3,9 @@ Single-threaded web application service framework designed as an alternative to
 ordinary desktop application development. See http://github.com/kjosib/kali
 """
 
-__all__ = ['serve_http', 'Request', 'Template', 'Response', 'Router', 'StaticFolder']
+__all__ = [
+	'serve_http', 'Request', 'Template', 'Response', 'Router', 'StaticFolder',
+]
 
 import socket, urllib.parse, random, sys, html, traceback, re, operator, os
 from typing import List, Dict, Iterable, Callable, Optional
@@ -237,8 +239,40 @@ class Request:
 		if path[-1] in ('', '.') and better: better.append('')
 		return '/' + '/'.join(better)
 
+class AbstractTemplate:
+	"""
+	"Acts like a template" means a callable object that turns
+	keyword parameters into an IoList.
+	"""
+	
+	def __call__(self, **kwargs): raise NotImplementedError(type(self))
+	
+	def assembly(self, **kwargs) -> "SubAssembly":
+		"""
+		Templates are a lot like functions. You should be able to snap them
+		together like legos into larger, more powerful templates. One way
+		would be to write ordinary Python functions. That's well and good,
+		but a tad repetitious and annoyingly verbose. Also, there's to be
+		a means to grab template definitions out of separate storage...
 
-class Template:
+		In that light, templates have a defined sub-assembly mechanism.
+		For example:
+		
+		page=Template("...{title}...{.body}...{foobar}...")
+		user_page = page.assembly(
+			 title="Hello, {user}",
+			body="...Hello, {user}...{.body}...",
+		)
+		
+		Then user_page acts like a template which takes parameters "user",
+		"body", and "foobar". You can bind strings (which become templates),
+		or anything that acts like a template. Sub-assemblies may be further
+		extended in the same manner without limit.
+		"""
+		return SubAssembly(self, kwargs)
+
+
+class Template(AbstractTemplate):
 	"""
 	Any half-decent web framework needs to provide a cooperative templating system.
 	This simple but effective approach cooperates with the iolist idea -- at least somewhat.
@@ -274,6 +308,24 @@ class Template:
 	
 	def __call__(self, **kwargs):
 		return [item(kwargs) for item in self.items]
+
+class SubAssembly(AbstractTemplate):
+	"""
+	This supplies an implementation for snapping templates together to form
+	larger templates. Normally you won't use this directly, but will instead
+	use the "assembly" method on the base template.
+	"""
+	def __init__(self, base:AbstractTemplate, bindings:Dict[str, (str, AbstractTemplate)]):
+		self.base = base
+		self.bindings = {
+			key: Template(value) if isinstance(value, str) else value
+			for key, value in bindings.items()
+		}
+	
+	def __call__(self, **kwargs):
+		parts = {key:binding(**kwargs) for key, binding in self.bindings.items()}
+		return self.base(**dict(kwargs, **parts))
+
 
 class Response:
 	"""
