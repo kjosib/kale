@@ -284,9 +284,13 @@ class Template(AbstractTemplate):
 	Parameters will be entity-encoded unless they begin with a dot like {.this},
 	in which case they're passed through as-is. Alternatively, like {this:how} means
 	look up ':how' in the registry as a pre-processing step before html-encoding.
+	(These are mutually exclusive.)
 	"""
 	PATTERN = re.compile(r'{(\.?)([_a-zA-Z]\w*)(:\w+)?}')
-	REGISTRY = {}
+	REGISTRY = {
+		':num': lambda n:'{:,}'.format(n), # Show numbers with thousands-separator.
+		':cents': lambda n:'{:,.2f}'.format(n), # That, and also two decimal places.
+	}
 	
 	def __init__(self, text:str):
 		self.items = []
