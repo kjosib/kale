@@ -13,16 +13,67 @@ which give personality to each of the (notional) fields for whatever sort of
 record your formlet is editing. The FormElement doesn't store the field name,
 so you can reuse the same one for different fields that have basically the
 same behavior.
+
+A small note: Dealing gracefully with incomplete or incorrect user-input
+is always more challenging than the happy path.
 """
 
 __all__ = [
-	'Formlet', 'FormElement', 'ValidationError', 'SaveError', 'Entry', 'tag',
+	'Formlet', 'FormElement', 'ValidationError', 'SaveError', 'Entry',
+	'tag', 'Lens', 'Pick', 'Memo',
 ]
 
 import html
-from typing import List, Dict, Iterable, Callable, Optional
+from typing import Dict, Iterable, NamedTuple, Tuple, Callable, TypeVar
 from . import implementation
 
+NATIVE = TypeVar('NATIVE')
+
+class Lens(NamedTuple):
+	"""
+	Not everything is all strings. Not everything is valid.
+	And not every kind of web data entry widget should have to support
+	a gazillion options for every conceivable pre/post-processing and
+	validation situation.
+	
+	Instead, they accept a triad of functions called a "Lens":
+	
+	* `nat2web` takes a native Python value to a string for the web.
+	
+	* `web2nat` takes a string (as from the browser) back to a native
+	value for use in the application. THIS MAY FAIL for several
+	reasons: Maybe it doesn't parse as a number. Maybe it fails a
+	regular expression check. Maybe it's February 30th (nonsense).
+	At any rate, if something is wrong, raise ValidationError with an
+	appropriate message.
+	
+	* `is_valid` is a predicate over native values. On rejection, it could
+	raise ValidationError like `web2nat`, or simply return falsely, when...
+	
+	* `fail` becomes to an error string argument for a ValidationError
+	that gets raised on your behalf.
+	
+	You know the needs of your application better than any framework
+	architect. But in general, you'll probably only need a few lenses
+	for a few major data types and/or situations.
+	
+	Just a hint: Form elements can use lenses in a couple different ways.
+	For example, the PickSet element applies the lens to each member of a
+	set, rather than to the set as a whole. (The sniff-test is overall.)
+	"""
+	
+	# NB: Annoyingly, defaults would get treated as instance methods...
+	nat2web:Callable[[NATIVE], str]
+	web2nat:Callable[[str], NATIVE]
+	is_valid:Callable[[NATIVE], bool]
+	fail:str
+	
+	def check(self, native:NATIVE):
+		if self.is_valid(native): return native
+		else: raise ValidationError(self.fail)
+
+Typical = Lens(str, str.strip, bool, 'may not be blank.')
+Blank = Lens(str, str.strip, lambda x:True, '')
 
 class ValidationError(Exception):
 	""" Raise with a sensible message about a specific field failing validation. """
@@ -31,8 +82,11 @@ class SaveError(Exception):
 	""" Raise with an errors dictionary. Your display method must cope with it. """
 
 def tag(kind, attributes:dict, content):
-	""" Make an HTML tag IoList."""
-	a_text = [' %s="%s"'%(html.escape(key), html.escape(value)) for key,value in attributes.items()]
+	""" Make an HTML tag IoList. Attributes valued `None` are mentioned but not assigned. """
+	def assign(key, value):
+		if value is None: return [' ', html.escape(key)]
+		else: return [' ', html.escape(key), '"', html.escape(value), '"']
+	a_text = [assign(*pair) for pair in attributes.items()]
 	if content is None: return ["<",kind,a_text,"/>"]
 	else: return ["<",kind,a_text,'>',content,"</",kind,">"]
 
@@ -64,7 +118,7 @@ class Formlet:
 		"""
 		raise NotImplementedError(type(self))
 	
-	def display(self, html:dict, errors:dict) -> implementation.Response:
+	def display(self, fields:dict, errors:dict) -> implementation.Response:
 		"""
 		Display a form, with the HTML bits corresponding to the fields,
 		and potentially with any errors from a failed attempt. Field-specific
@@ -104,8 +158,8 @@ class Formlet:
 		return {key: elt.n2i(native[key]) for key, elt in self.elements.items()}
 	
 	def _display(self, intermediate:dict, errors:dict) -> implementation.Response:
-		html = {key: elt.i2h(key, intermediate[key]) for key, elt in self.elements.items()}
-		return self.display(html, errors)
+		fields = {key: elt.i2h(key, intermediate[key]) for key, elt in self.elements.items()}
+		return self.display(fields, errors)
 	
 	def do_POST(self, request:implementation.Request) -> implementation.Response:
 		self.request = request
@@ -144,7 +198,7 @@ class FormElement:
 		""" Return intermediate data corresponding to given native value. """
 		raise NotImplementedError(type(self))
 	
-	def p2i(self, key:str, POST:implementation.Bag):
+	def p2i(self, name:str, POST:implementation.Bag):
 		"""
 		Return intermediate data coming in from POST. This should not fail
 		(so long as the browser plays nice) and it must be possible to
@@ -154,7 +208,7 @@ class FormElement:
 		"""
 		raise NotImplementedError(type(self))
 	
-	def i2h(self, key, intermediate):
+	def i2h(self, name, intermediate):
 		"""
 		Return an HTML IoList corresponding to an intermediate value. This
 		may get complex, as in drop-down selections or date entry fields.
@@ -163,44 +217,97 @@ class FormElement:
 	
 	def i2n(self, intermediate) -> object:
 		"""
-		Given an intermediate value (as back from the browser) convert to
-		native form for use in the application. THIS MAY FAIL for several
-		reasons: Maybe it doesn't parse as a number. Maybe it fails a
-		regular expression check. Maybe it's February 30th (nonsense).
-		At any rate, if something is wrong, raise ValidationError with an
-		appropriate message.
+		Convert an intermediate value (as known to the FormElement) back to
+		native form for use in the application. Normally delegates to a Lens.
 		"""
 		raise NotImplementedError(type(self))
 
 class Entry(FormElement):
 	""" A typical single-line form input box taking enough parameters to be usually useful. """
-	def __init__(self, *, pre=str.strip, valid=lambda s:True, fail:str=None, **kwargs):
+	def __init__(self, *, lens:Lens=Typical, **kwargs):
 		""" **kwargs become tag attributes. Use _class to set the CSS class. maxlength is enforced. """
 		self.maxlength = int(kwargs.get('maxlength', 0))
-		self.pre=pre
-		self.valid=valid
-		self.fail=fail
+		self.lens = lens
 		self.attributes = {k:str(v).lstrip('_') for k,v in kwargs.items()}
 
-	def n2i(self, value):
-		return str(value)
+	def n2i(self, value): return self.lens.nat2web(value)
 	
-	def p2i(self, key: str, POST: implementation.Bag):
-		intermediate = POST.get(key, '')
+	def p2i(self, name: str, POST: implementation.Bag):
+		intermediate = POST.get(name, '')
 		if self.maxlength and len(intermediate) > self.maxlength:
 			intermediate = intermediate[:self.maxlength]
 		return intermediate
 	
-	def i2h(self, key, intermediate):
-		return tag('input', {**self.attributes, 'type': 'text', 'name': key, 'value': intermediate, }, None)
+	def i2h(self, name, intermediate):
+		return tag('input', {**self.attributes, 'type': 'text', 'name': name, 'value': intermediate, }, None)
 	
 	def i2n(self, intermediate) -> object:
-		native = self.pre(intermediate)
-		if self.valid(native): return native
-		else: raise ValidationError(self.fail)
+		return self.lens.check(self.lens.web2nat(intermediate))
 
 class Memo(Entry):
 	""" A textarea. This differs from an entry field only in the i2h method. """
-	def i2h(self, key, intermediate):
-		return tag('textarea', {**self.attributes, 'type': 'text', 'name': key}, html.escape(intermediate))
+	def i2h(self, name, intermediate):
+		return tag('textarea', {**self.attributes, 'type': 'text', 'name': name}, html.escape(intermediate))
 
+
+def option(value: str, label: str, selected: bool):
+	""" Pick lists of all sorts need a simple way to get the entries made. """
+	first = '<option selected value="' if selected else '<option value="'
+	return [first, html.escape(value), '">', html.escape(label), '</option>']
+
+
+class Pick(FormElement):
+	"""
+	A selection box. For options, you may supply
+	"""
+	def __init__(self, ops, lens:Lens=Typical, required:str='', multiple:bool=False, **kwargs:dict):
+		"""
+		Create a selection box.
+		:param ops: either an iterable of pairs (which will be copied first) or a function that produces one on-demand.
+		:param lens: works in the usual manner; on each element of a set if a multi-selection.
+		:param required: If non-blank, the error message to raise on empty input.
+		:param multiple: Allow and support multiple-selection.
+		:param kwargs: Other attributes to the <select...> tag.
+		"""
+		assert "multiple" not in map(str.lower, kwargs.keys())
+		self.ops = tuple(ops) if isinstance(ops, Iterable) else ops
+		self.lens = lens
+		self.required = required
+		self.multiple = multiple
+		self.attributes = {k:str(v).lstrip('_') for k,v in kwargs.items()}
+		if multiple: self.attributes['multiple'] = None
+	
+	def options(self, intermediate) -> Iterable[Tuple[str, str, bool]]:
+		""" Work in terms of the intermediate value to support weird cases. """
+		if self.multiple:
+			test = intermediate.__contains__
+		else:
+			test = intermediate.__eq__
+			if not (self.required and intermediate):
+				yield '', '', False
+		ops = self.ops
+		if callable(self.ops): ops = ops()
+		for native, label in ops:
+			assert isinstance(label, str), type(label)
+			value = self.lens.nat2web(native)
+			yield value, label, test(value)
+	
+	def i2h(self, name, intermediate):
+		opt_html = [option(*o) for o in self.options(intermediate)]
+		return tag('select', {**self.attributes, 'name':name}, opt_html)
+	
+	def n2i(self, value):
+		if self.multiple: return set(map(self.lens.nat2web, value))
+		else: return self.lens.nat2web(value)
+	
+	def p2i(self, name: str, POST: implementation.Bag):
+		if self.multiple: return POST.get_list(name)
+		else: return POST[name]
+	
+	def i2n(self, intermediate) -> object:
+		if self.required and not intermediate: raise ValidationError(self.required)
+		if self.multiple: native = set(map(self.lens.web2nat, intermediate))
+		else: native = self.lens.web2nat(intermediate)
+		return self.lens.check(native)
+	
+	
