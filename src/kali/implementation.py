@@ -5,9 +5,10 @@ ordinary desktop application development. See http://github.com/kjosib/kali
 
 __all__ = [
 	'serve_http', 'Request', 'Template', 'Response', 'Router', 'StaticFolder',
+	'TemplateFolder',
 ]
 
-import socket, urllib.parse, random, sys, html, traceback, re, operator, os
+import socket, urllib.parse, random, sys, html, traceback, re, operator, os, pathlib
 from typing import List, Dict, Iterable, Callable, Optional
 
 class ProtocolError(Exception): """ The browser did something wrong. """
@@ -330,6 +331,92 @@ class SubAssembly(AbstractTemplate):
 	def __call__(self, **kwargs):
 		parts = {key:binding(**kwargs) for key, binding in self.bindings.items()}
 		return self.base(**dict(kwargs, **parts))
+	
+class TemplateFolder:
+	"""
+	It's not long before you realize that templates exist to be separated
+	from "code". They are OK as here-documents in very small quantities,
+	but as soon as you get to developing in earnest, you'll want to see
+	them as separate files for at least two reasons: First, you generally
+	get much better "smart editor" support. Second, you don't always have
+	to restart the service to see changes if you use the provided cache
+	management wrapper.
+	
+	This object provides a means to get templates on-demand from the
+	filesystem and keep them around, pre-parsed, for as long as you like.
+	For completeness, we also provide a means to means to read a SubAssembly
+	straight from a single template file without confusing your editor.
+	
+	The object provides a service wrapper designed to manage the cache.
+	It's appropriate in a single-user scenario. (In a big production web
+	server, you normally don't invalidate templates until restart anyway.)
+	"""
+	
+	BEGIN_ASSY = '<extend>'
+	END_ASSY = '</extend>'
+	
+	
+	
+	def __init__(self, path, extension='.tpl'):
+		self.folder = pathlib.Path(path)
+		assert self.folder.is_dir(), path
+		self.extension = extension or ''
+		self.__store = {}
+	
+	def __call__(self, filename:str):
+		"""
+		:param filename: the basename of a template in the folder.
+		:return: the parsed template, ready to go, and cached for next time.
+		"""
+		try: return self.__store[filename]
+		except KeyError:
+			with open(self.folder/(filename+self.extension)) as fh:
+				text = fh.read().lstrip()
+			if text.startswith(self.BEGIN_ASSY): it = self.__read_assembly(text)
+			else: it = Template(text)
+			self.__store[filename] = it
+			return it
+	
+	def __read_assembly(self, text:str) -> SubAssembly:
+		"""
+		Expect an extension template and turn it into a SubAssembly object.
+		It is expected to be a single <extends> tag (case sensitive) with
+		possible trailing whitespace. Inside that tag, the first section is
+		the name of the base template. The sections after <?name?>
+		processing instructions are bindings to the given name. This format
+		is chosen not to confuse PyCharm's HTML editor (much).
+		"""
+		
+		bind = {}
+		key = None
+		left = len(self.BEGIN_ASSY)
+		right = text.rindex(self.END_ASSY)
+		assert text[right+len(self.END_ASSY):].isspace()
+		for match in re.finditer(r'<\?(.*?)\?>', text):
+			bind[key] = text[left:match.start()]
+			key = match.group(1).strip()
+			left = match.end()
+		bind[key] = text[left:right]
+		base = self(bind.pop(None).strip())
+		return base.assembly(**bind)
+		
+		
+	
+	def wrap(self, handler):
+		"""
+		This wraps a handler in a function that invalidates the template cache on
+		every hit. That's useful in development while you're tweaking templates, but
+		you might turn it off for production use. You'll typically use this as:
+		
+		tpl = TemplateFolder('templates')
+		app = Router()
+		.... various set-up and defining your application ...
+		serve_http(tpl.wrap(app))
+		"""
+		def wrapper(request:Request)->Response:
+			self.__store.clear()
+			return handler(request)
+		return wrapper
 
 
 class Response:
@@ -366,12 +453,12 @@ class Response:
 	]
 	
 	TEMPLATE_GENERIC = Template("""
-	<!DOCTYPE HTML>
+	<!DOCTYPE html>
 	<html><head><title>{title}</title></head>
 	<body> <h1>{title}</h1>
 	{.body}
 	<hr/>
-	<pre style="background:black;color:green;padding:20px;font-size:15px">Python Version: {version}\r\nKali version 0.0.1</pre>
+	<pre style="background:black;color:green;padding:20px;font-size:15px">Python Version: {version}\r\nKali version 0.0.2</pre>
 	</body></html>
 	""")
 	
