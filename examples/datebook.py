@@ -40,10 +40,10 @@ app = Router()
 
 @app.function('/')
 def dashboard():
-	return tpl('page')(
-		title="Dashboard",
-		body="So I guess this would get a list of things coming up, in terms of appointments and tasks.",
-	)
+	"""
+	This is shockingly simple at the moment, but that will change soon...
+	"""
+	return tpl('dashboard')()
 
 def transaction_wrapper(request:Request)->Response:
 	try: response = app(request)

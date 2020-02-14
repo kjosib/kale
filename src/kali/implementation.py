@@ -391,12 +391,13 @@ class TemplateFolder:
 		key = None
 		left = len(self.BEGIN_ASSY)
 		right = text.rindex(self.END_ASSY)
-		assert text[right+len(self.END_ASSY):].isspace()
+		suffix = text[right+len(self.END_ASSY):]
+		assert suffix=='' or suffix.isspace()
 		for match in re.finditer(r'<\?(.*?)\?>', text):
-			bind[key] = text[left:match.start()]
+			bind[key] = text[left:match.start()].strip()
 			key = match.group(1).strip()
 			left = match.end()
-		bind[key] = text[left:right]
+		bind[key] = text[left:right].strip()
 		base = self(bind.pop(None).strip())
 		return base.assembly(**bind)
 		
