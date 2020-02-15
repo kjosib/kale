@@ -2,8 +2,16 @@
 This is your super-simple introductory example of how to get started.
 
 The kali module must be in your PYTHONPATH environment variable.
-That happens automatically if you use the demo.bat script at the
-project root, or configure your IDE to consider ../src as "sources root".
+That happens automatically if you do any of:
+
+	1. Install from the Python Package Index:
+		pip install --upgrade kali
+
+	2. Use the demo.bat script at the project root, or
+	
+	3. configure your IDE to consider ../src as "sources root".
+
+Let's get to it, then:
 """
 
 from kali import Response, serve_http, Router
@@ -45,8 +53,8 @@ tally = 0
 def add(a,b):
 	a,b = float(a), float(b)
 	return Response.plain_text([
-		'The sum of <', a, '> and <', b, '> is <', a+b,
-		'>.\r\nAlso, this page is plain text, not HTML.',
+		'The sum of <', a, '> and <', b, '> is <', a+b, '>.\r\n',
+		'Also, this page is served as plain text, not HTML.',
 	])
 
 # You can also read query parameters using keyword-arguments. If there's
@@ -71,3 +79,5 @@ def search(q=''):
 # At the end of the main module, you're going to do something like this:
 
 serve_http(app)
+
+# For the next example, why don't you have a look at "static_content.py"?

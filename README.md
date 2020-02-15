@@ -2,6 +2,16 @@
 Simple, reliable, single-threaded HTTP service in Python. Aimed at serving web application to
 localhost as alternative to desktop application development.
 
+## Quick Start!
+There are tutorial demonstrations in the `examples` folder at the
+[Git repository](https://github.com/kjosib/kali).
+Mainly, you should read that source code
+([start with the intro](https://github.com/kjosib/kali/blob/master/examples/intro.py))
+because it will show you how this all fits together.
+You can run the demos from the Windows command line by, for example, `demo intro`.
+(If you're on Linux/Mac/Unix, then feel free to contribute a suitable shell script.)
+
+## Why This, Then?
 I wanted to expose a SINGLE-THREADED WEB APPLICATION over HTTP to LOCALHOST ONLY.
 Web application, because it's a comfortable style of working with data entry and navigation.
 Single threaded, to support working well with SQLite, which doesn't play well with multi-threading,
@@ -18,6 +28,8 @@ will generally have the request data from the browser. The server also only spea
 purpose: it guarantees all requests are served in a timely manner. There is zero packet latency
 on localhost, so there's not a real performance drain here.
 
+## Features! Benefits!
+
 So long as I'm re-inventing the wheel, I might as well do it with the end in sight.
 Therefore:
 
@@ -33,20 +45,17 @@ Therefore:
 	to parameters, etc. Several ways are provided to register
 	functionality, ranging from absolute flexibility to complete convenience.
 
-3. It's really annoying forgetting to commit-or-rollback a transaction in a handler.
+3. The framework takes (some) pains to avoid excessive copying, drawing inspiration from the
+	iolist facility in the Erlang ecosystem. Rather than building up a big string, supply
+	a list of them, or a funny-shaped nest of them, etc. The rules are somewhat loose.
+
+4. There's a simple HTML templating facility included: it will do the job without being
+	accidentally quadratic (much). You can have templates inline or saved in separate files:
+	allowance is made for both styles of working.
+
+5. It's really annoying forgetting to commit-or-rollback a transaction in a handler.
 	Changes may appear fine locally (until they vanish) but nobody else sees anything
 	except a locked database. Checking for this a simple matter by wrapping the root
 	handler (application router) and taking corrective measures. (Roll back the
 	transaction and return an error response maybe.)
-
-4. The framework takes (some) pains to avoid excessive copying, drawing inspiration from the
-	iolist facility in the Erlang ecosystem. Rather than building up a big string, supply
-	a list of them, or a funny-shaped nest of them, etc. The rules are somewhat loose.
-
-5. There's a simple HTML templating facility included: it will do the job without being
-	accidentally quadratic. Much.
-
-6. There are tutorial demonstrations in the `examples` folder. You can run them from
-    the Windows command line by, for example, `demo intro`. If you're on Linux/Mac/Unix,
-    then feel free to contribute a suitable shell script.
 

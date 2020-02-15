@@ -12,6 +12,10 @@ your web browser.
 </p>
 
 <p>Click <a href="static">here</a> to see this work.</p>
+
+<p>When you're done digesting this example, may I suggest
+<a href="/static/simple_task_list.py"> simple_task_list.py </a>?</p>
+
 </body></html>
 """
 
