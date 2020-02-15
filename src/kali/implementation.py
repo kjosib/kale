@@ -272,6 +272,9 @@ class AbstractTemplate:
 		extended in the same manner without limit.
 		"""
 		return SubAssembly(self, kwargs)
+	
+	def each(self, iterable):
+		return [self(**i) for i in iterable]
 
 
 class Template(AbstractTemplate):
@@ -299,7 +302,8 @@ class Template(AbstractTemplate):
 		def literal(b:bytes): return lambda x:b
 		def escape(keyword:str):
 			def fn(x):
-				item = x[keyword]
+				try: item = x[keyword]
+				except KeyError: item = '{'+keyword+'}'
 				if isinstance(item, str): item = html.escape(item)
 				return item
 			return fn

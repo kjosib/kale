@@ -72,7 +72,7 @@ def home():
 task_form = kali.Template("""
 	<form method="post">
 	<input type="text" name="task" value="{task}" />
-	<input type="submit" value="{label}">
+	<input type="submit" value="{label}" />
 	</form>
 """)
 
