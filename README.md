@@ -53,7 +53,10 @@ Therefore:
 	accidentally quadratic (much). You can have templates inline or saved in separate files:
 	allowance is made for both styles of working.
 
-5. It's really annoying forgetting to commit-or-rollback a transaction in a handler.
+5. There's also a forms-handling library supplied. It offers components that make it
+    extra easy to handle the most common kinds of work flows.
+
+6. It's really annoying forgetting to commit-or-rollback a transaction in a handler.
 	Changes may appear fine locally (until they vanish) but nobody else sees anything
 	except a locked database. Checking for this a simple matter by wrapping the root
 	handler (application router) and taking corrective measures. (Roll back the
