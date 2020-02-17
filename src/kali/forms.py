@@ -24,11 +24,18 @@ __all__ = [
 	'ChoiceLens', 'EnumLens'
 ]
 
-import html
-from typing import Dict, Iterable, Tuple, Sequence, TypeVar, Mapping
+import html, re
+from typing import Dict, Iterable, Tuple, Sequence, TypeVar, Pattern
 from . import implementation
 
 NATIVE = TypeVar('NATIVE')
+
+class ValidationError(Exception):
+	""" Raise with a sensible message about a specific field failing validation. """
+	
+class SaveError(Exception):
+	""" Raise with an errors dictionary. Your display method must cope with it. """
+
 
 class Lens:
 	"""
@@ -58,23 +65,61 @@ class Lens:
 
 class StringLens(Lens):
 	""" Simple bits for usual stringy cases: """
-	def __init__(self, *, error='', blank:str=None):
-		self.__error = error
-		self.__blank = blank
+	def __init__(self, *, default=''):
+		self.__default = default
 	
 	def string_for_browser(self, n: NATIVE) -> str:
-		return '' if n is None else str(n)
+		return self.__default if n is None else str(n)
 	
 	def native_from_string(self, s: str) -> NATIVE:
-		n = s.strip()
-		if n == '':
-			if self.__error: raise ValidationError(self.__error)
-			else: return self.__blank
-		else: return n
+		return s.strip()
+
+BLANKABLE = StringLens()
+
+class Test(Lens):
+	def __init__(self, predicate, *, child=BLANKABLE, error:str, flags=None):
+		"""
+		Lenses naturally compose, following the "Decorator" pattern. This
+		one provides for easy input validation.
+		
+		:parameter predicate: Nine times out of ten, a regular expression
+		will do the job, so the rule here is you can pass either
+		a regular expression or a callable of one argument.
+		
+		:parameter child: The most usual case is the default: Just trim the
+		input string before validation. But again, you have control.
+		"""
+		self.__child = child
+		if isinstance(predicate, str): predicate = re.compile(predicate, flags or 0)
+		if isinstance(predicate, Pattern): predicate = predicate.fullmatch
+		assert callable(predicate)
+		self.__test = predicate
+		self.__error = error
 	
-TYPICAL = StringLens(error='may not be blank.')
-NULLABLE = StringLens()
-BLANKABLE = StringLens(blank='')
+	def string_for_browser(self, n: NATIVE) -> str:
+		return self.__child.string_for_browser(n)
+	
+	def native_from_string(self, s: str) -> NATIVE:
+		n = self.__child.native_from_string(s)
+		if self.__test(n): return n
+		else: raise ValidationError(self.__error)
+
+TYPICAL = Test(bool, error='may not be blank.')
+
+class Nullable(Lens):
+	""" This decorator maps blank entries to None/null. """
+	def __init__(self, child:Lens):
+		self.__child = child
+		
+	def string_for_browser(self, n: NATIVE) -> str:
+		return self.__child.string_for_browser('' if n is None else n)
+	
+	def native_from_string(self, s: str) -> NATIVE:
+		n = self.__child.native_from_string(s)
+		return None if n == '' else n
+
+
+NULLABLE = Nullable(BLANKABLE)
 
 class ChoiceLens(Lens):
 	"""
@@ -90,12 +135,6 @@ class ChoiceLens(Lens):
 	
 	def label_for(self, n:NATIVE) -> str:
 		raise NotImplementedError(type(self))
-
-class ValidationError(Exception):
-	""" Raise with a sensible message about a specific field failing validation. """
-	
-class SaveError(Exception):
-	""" Raise with an errors dictionary. Your display method must cope with it. """
 
 def tag(kind, attributes:dict, content):
 	""" Make an HTML tag IoList. Attributes valued `None` are mentioned but not assigned. """
