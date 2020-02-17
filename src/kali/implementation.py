@@ -394,7 +394,8 @@ class TemplateFolder:
 		bind = {}
 		key = None
 		left = len(self.BEGIN_ASSY)
-		right = text.rindex(self.END_ASSY)
+		try: right = text.rindex(self.END_ASSY)
+		except ValueError: right=len(text)
 		suffix = text[right+len(self.END_ASSY):]
 		assert suffix=='' or suffix.isspace()
 		for match in re.finditer(r'<\?(.*?)\?>', text):
@@ -543,14 +544,14 @@ class Router:
 		# real applications won't stress this too hard.
 		path, node, i, found, best, backtrack = request.path, self.root, 0, None, -1, []
 		while True:
-			if node.entry is not None and i > best: found, best = node.entry, i
-			if self.WILDCARD in node.kids: backtrack.append((node.kids[self.WILDCARD], i + 1))
+			if node.entry is not None and i > best: found, best = node, i
+			if i<len(path) and self.WILDCARD in node.kids: backtrack.append((node.kids[self.WILDCARD], i + 1))
 			if i<len(path) and path[i] in node.kids: node, i = node.kids[path[i]], i + 1
 			elif backtrack: node, i = backtrack.pop()
 			elif found is None: return Response.generic(code=404)
 			else:
 				request.mount_depth = best
-				handler, wildcards = found
+				handler, wildcards = found.entry
 				request.args = [path[i] for i in wildcards]
 				return handler(request)
 	
