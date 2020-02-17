@@ -11,7 +11,7 @@ sort order. It's sort of like session data, but since there's only one user
 the "session" object is just the global scope.
 """
 import sqlite3, pathlib, sys, datetime
-from typing import Iterable, Mapping
+from typing import Iterable, Mapping, Dict
 from kali import serve_http, Router, Request, Response, TemplateFolder, forms, implementation
 
 # I want to use SQLite, and store my data in your home folder....
@@ -90,6 +90,8 @@ def set_task_sort_order(order):
 	STATE['task_order'] = order
 	return Response.redirect("/")
 
+# An application like this needs some way to enter data.
+# Let's start with something for to-do list entries:
 @app.servlet('/task/new')
 class NewTask(forms.Formlet):
 	def __init__(self):
@@ -101,7 +103,7 @@ class NewTask(forms.Formlet):
 	def display(self, fields: dict, errors: dict) -> Response:
 		return tpl('task_form')(**fields, errors=errors)
 	
-	def save(self, native: dict, request: implementation.Request) -> Response:
+	def save(self, native: dict, request: Request) -> Response:
 		insert('task', native)
 		connection.commit()
 		return Response.redirect('/')
@@ -119,15 +121,60 @@ class EditTask(forms.Formlet):
 	def display(self, fields: dict, errors: dict) -> Response:
 		return tpl('task_form')(**fields, errors=errors)
 	
-	def save(self, native: dict, request: implementation.Request) -> implementation.Response:
+	def save(self, native: dict, request: Request) -> Response:
 		update('task', assign=native, where={'task':self.task})
 		connection.commit()
 		return Response.redirect('/')
 
+@app.function('/contact/')
+def list_contacts(q=''):
+	if q:
+		Q(
+			"select * from contact where name like ? or address like ? or memo like ? order by name",
+			['%'+q+'%']*3
+		)
+	else:
+		Q("select * from contact order by name")
+	return tpl('contact_home')(
+		q=q,
+		rows = tpl('contact_row').each(cursor)
+	)
+
+
+@app.servlet('/contact/new')
+@app.servlet('/contact/*')
+class ContactForm(forms.Formlet):
+	"""
+	If you think about it, the "Add" and "Edit" functionality is extremely
+	similar. The same `Formlet` subclass can handle both cases. It's up to
+	you which approach you prefer.
+	"""
+	def __init__(self, contact_id=None):
+		self.contact_id = int(contact_id) if contact_id else None
+		super().__init__(CONTACT_ELEMENTS)
+	
+	def get_native(self) -> dict:
+		if self.contact_id is None:
+			return {}
+		else:
+			Q("select * from contact where contact=?", [self.contact_id])
+			return next(cursor)
+	
+	def display(self, fields: dict, errors: dict) -> implementation.Response:
+		return tpl('contact_form')(errors=errors, **fields)
+	
+	def save(self, native: dict, request: implementation.Request) -> implementation.Response:
+		with connection:
+			if self.contact_id is None:
+				insert('contact', native)
+			else:
+				update('contact', where={'contact':self.contact_id}, assign=native)
+		return Response.redirect('/contact/')
+
+
 @app.function('/appt/new')
-@app.function('/appt')
-@app.function('/contact')
-def sorry_not_yet():
+@app.function('/appt/')
+def sorry_not_yet(contact=None):
 	return Response.generic(tpl('sorry')())
 
 
@@ -142,7 +189,16 @@ TASK_ELEMENTS = {
 	'due': forms.Entry(type='date', lens=forms.NULLABLE), # Technically we should perform date-validation...
 }
 
+PHONE = forms.Test(r'[-,;0-9()/]*', error='can contain only numbers and ()-,;/ characters.')
+EMAIL = forms.Test(r'|\S*@\S+\.[a-zA-Z]+', error='does not look much like an e-mail address.')
 
+CONTACT_ELEMENTS = {
+	'name': forms.Entry(style='flex:1'),
+	'phone': forms.Entry(lens=PHONE, style='flex:1'),
+	'email': forms.Entry(lens=EMAIL, style='flex:1'),
+	'address': forms.Memo(lens=forms.BLANKABLE, style='width:100%'),
+	'memo': forms.Memo(lens=forms.BLANKABLE, style='width:100%'),
+}
 
 def transaction_wrapper(request:Request)->Response:
 	try: response = app(request)
