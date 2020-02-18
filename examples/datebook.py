@@ -74,7 +74,7 @@ def coming_appointments():
 		where date between ? and ?
 		order by date
 	""", [today, next_week])
-	return tpl('appt_row').each(cursor)
+	return tpl('appt_list').loop(cursor)
 
 def pending_tasks():
 	order = {
@@ -82,7 +82,7 @@ def pending_tasks():
 		'due': "ifnull(due, '9999-99-99') asc, priority asc",
 	}[STATE['task_order']]
 	Q("select * from task where not complete order by "+order)
-	return tpl('task_row').each(cursor)
+	return tpl('task_list').loop(cursor)
 
 @app.function('/task/sort/*')
 def set_task_sort_order(order):
@@ -137,7 +137,7 @@ def list_contacts(q=''):
 		Q("select * from contact order by name")
 	return tpl('contact_home')(
 		q=q,
-		rows = tpl('contact_row').each(cursor)
+		rows = tpl('contact_list').loop(cursor)
 	)
 
 

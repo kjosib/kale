@@ -9,7 +9,8 @@ __all__ = [
 ]
 
 import socket, urllib.parse, random, sys, html, traceback, re, operator, os, pathlib
-from typing import List, Dict, Iterable, Callable, Optional
+import collections
+from typing import List, Dict, Iterable, Callable, Optional, Mapping
 
 class ProtocolError(Exception): """ The browser did something wrong. """
 
@@ -247,7 +248,9 @@ class AbstractTemplate:
 	keyword parameters into an IoList.
 	"""
 	
-	def __call__(self, **kwargs): raise NotImplementedError(type(self))
+	def __call__(self, **kwargs): return self.sub(kwargs)
+	
+	def sub(self, parameters:Mapping): raise NotImplementedError(type(self))
 	
 	def assembly(self, **kwargs) -> "SubAssembly":
 		"""
@@ -273,9 +276,6 @@ class AbstractTemplate:
 		"""
 		return SubAssembly(self, kwargs)
 	
-	def each(self, iterable):
-		return [self(**i) for i in iterable]
-
 
 class Template(AbstractTemplate):
 	"""
@@ -316,8 +316,8 @@ class Template(AbstractTemplate):
 			left = match.end()
 		if left < len(text): self.items.append(literal(bytes(text[left:], 'UTF-8')))
 	
-	def __call__(self, **kwargs):
-		return [item(kwargs) for item in self.items]
+	def sub(self, parameters):
+		return [item(parameters) for item in self.items]
 
 class SubAssembly(AbstractTemplate):
 	"""
@@ -332,10 +332,56 @@ class SubAssembly(AbstractTemplate):
 			for key, value in bindings.items()
 		}
 	
-	def __call__(self, **kwargs):
-		parts = {key:binding(**kwargs) for key, binding in self.bindings.items()}
-		return self.base(**dict(kwargs, **parts))
+	def sub(self, parameters:Mapping):
+		parts = {key:binding.sub(parameters) for key, binding in self.bindings.items()}
+		return self.base.sub(dict(parameters, **parts))
 	
+
+class TemplateLoop:
+	"""
+	Like 99 times out of 100, you want to present a list of something, and
+	that list requires a sensible preamble and epilogue. Oh, and if the list
+	happens to be empty, then often as not you want to show something
+	completely different. It's such a consistent motif that it almost
+	deserves its own control structure.
+	
+	This is that structure. The object constructor takes templates (or makes
+	them from strings) and then the .loop(...) method expects to be called
+	with an iterable for repetitions of the loop body. However, if the
+	iterable yields no results, you get the `otherwise` template expanded.
+	"""
+	def __init__(self, preamble, body, epilogue, otherwise=None):
+		def coerce(x):
+			if isinstance(x, str): return Template(x)
+			if callable(x): return x
+			assert False, type(x)
+		self.preamble = coerce(preamble)
+		self.body = coerce(body)
+		self.epilogue = coerce(epilogue)
+		self.otherwise = otherwise and coerce(otherwise)
+	
+	def loop(self, items:Iterable[Mapping], context:Mapping=None):
+		if context is None:
+			context = {}
+			sub = self.body.sub
+		else:
+			def sub(m):
+				local = dict(context)
+				local.update(m)
+				return self.body.sub(local)
+		each = iter(items)
+		try: first = next(each)
+		except StopIteration:
+			if self.otherwise: return self.otherwise.sub(context)
+			else: return ()
+		else: return [
+			self.preamble.sub(context),
+			sub(first),
+			*map(sub, each),
+			self.epilogue.sub(context),
+		]
+	
+
 class TemplateFolder:
 	"""
 	It's not long before you realize that templates exist to be separated
@@ -359,7 +405,8 @@ class TemplateFolder:
 	BEGIN_ASSY = '<extend>'
 	END_ASSY = '</extend>'
 	
-	
+	BEGIN_LOOP = '<loop>'
+	END_LOOP = '</loop>'
 	
 	def __init__(self, path, extension='.tpl'):
 		self.folder = pathlib.Path(path)
@@ -377,6 +424,7 @@ class TemplateFolder:
 			with open(self.folder/(filename+self.extension)) as fh:
 				text = fh.read().lstrip()
 			if text.startswith(self.BEGIN_ASSY): it = self.__read_assembly(text)
+			elif text.startswith(self.BEGIN_LOOP): it = self.__read_loop(text)
 			else: it = Template(text)
 			self.__store[filename] = it
 			return it
@@ -391,10 +439,30 @@ class TemplateFolder:
 		is chosen not to confuse PyCharm's HTML editor (much).
 		"""
 		
+		bind = self.__read_composite_template(text, len(self.BEGIN_ASSY), self.END_ASSY)
+		base = self(bind.pop(None).strip())
+		return base.assembly(**bind)
+		
+	def __read_loop(self, text:str) -> TemplateLoop:
+		bind = self.__read_composite_template(text, len(self.BEGIN_LOOP), self.END_LOOP)
+		if not bind.keys() <= {None, 'begin', 'end', 'else'}: raise ValueError('Template loop has weird sections.')
+		return TemplateLoop(bind[None], bind['begin'], bind.get('end', ''), bind.get('else'))
+	
+	def __read_composite_template(self, text:str, start:int, end_marker:str) -> dict:
+		"""
+		Turns out this is a thing...
+		I'm defining "composite template" by absurd misuse of XML processing
+		instructions... although strictly-speaking, XML-PI are application-
+		defined, so I guess there's no such thing as misuse. Anyway, the
+		concept is to divide the input text wherever an XML-PI occurs, thus
+		producing a dictionary of components. The first component (before any
+		division) is keyed to `None`, and everything else is keyed to the name
+		of the XML-PI that precedes it.
+		"""
 		bind = {}
 		key = None
-		left = len(self.BEGIN_ASSY)
-		try: right = text.rindex(self.END_ASSY)
+		left = start
+		try: right = text.rindex(end_marker)
 		except ValueError: right=len(text)
 		suffix = text[right+len(self.END_ASSY):]
 		assert suffix=='' or suffix.isspace()
@@ -403,10 +471,8 @@ class TemplateFolder:
 			key = match.group(1).strip()
 			left = match.end()
 		bind[key] = text[left:right].strip()
-		base = self(bind.pop(None).strip())
-		return base.assembly(**bind)
-		
-		
+		return bind
+
 	
 	def wrap(self, handler):
 		"""
