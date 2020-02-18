@@ -46,12 +46,15 @@ Therefore:
 	functionality, ranging from absolute flexibility to complete convenience.
 
 3. The framework takes (some) pains to avoid excessive copying, drawing inspiration from the
-	iolist facility in the Erlang ecosystem. Rather than building up a big string, supply
+	`iolist` facility in the Erlang ecosystem. Rather than building up a big string, supply
 	a list of them, or a funny-shaped nest of them, etc. The rules are somewhat loose.
 
 4. There's a simple HTML templating facility included: it will do the job without being
-	accidentally quadratic (much). You can have templates inline or saved in separate files:
-	allowance is made for both styles of working.
+	accidentally quadratic (much) by participating in the above-described `iolist` game.
+	You can have templates inline or saved in separate files:
+	allowance is made for both styles of working. As feature sets go, it covers the
+	most important bits (substitution, HTML escapes, loops, template extension) but
+	leaves the really creative stuff for your Python code to work out.
 
 5. There's also a forms-handling library supplied. It offers components that make it
     extra easy to handle the most common kinds of work flows.
