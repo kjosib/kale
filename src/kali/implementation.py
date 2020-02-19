@@ -5,11 +5,10 @@ ordinary desktop application development. See http://github.com/kjosib/kali
 
 __all__ = [
 	'serve_http', 'Request', 'Template', 'Response', 'Router', 'StaticFolder',
-	'TemplateFolder',
+	'TemplateFolder', 'Servlet',
 ]
 
 import socket, urllib.parse, random, sys, html, traceback, re, operator, os, pathlib
-import collections
 from typing import List, Dict, Iterable, Callable, Optional, Mapping
 
 class ProtocolError(Exception): """ The browser did something wrong. """
@@ -530,7 +529,7 @@ class Response:
 	<body> <h1>{title}</h1>
 	{.body}
 	<hr/>
-	<pre style="background:black;color:green;padding:20px;font-size:15px">Python Version: {version}\r\nKali version 0.0.2</pre>
+	<pre style="background:black;color:green;padding:20px;font-size:15px">Python Version: {version}\r\nKali version 0.0.4</pre>
 	</body></html>
 	""")
 	
@@ -767,4 +766,14 @@ class StaticFolder:
 		except OSError:
 			return Response.generic(code=404)
 	
-
+class Servlet:
+	"""
+	This class does absolutely nothing of consequence, but if you derive a
+	subclass from it then your IDE will probably be able to fill in method
+	prototypes for the derived subclass.
+	"""
+	def do_GET(self, request:Request) -> Response:
+		raise NotImplementedError(type(self))
+	
+	def do_POST(self, request:Request) -> Response:
+		raise NotImplementedError(type(self))

@@ -24,9 +24,9 @@ __all__ = [
 	'ChoiceLens', 'EnumLens'
 ]
 
-import html, re
+import html, re, datetime
 from typing import Dict, Iterable, Tuple, Sequence, TypeVar, Pattern
-from . import implementation
+from .implementation import Request, Response, Servlet, Bag
 
 NATIVE = TypeVar('NATIVE')
 
@@ -45,7 +45,8 @@ class Lens:
 	a gazillion options for every conceivable pre/post-processing and
 	validation situation.
 	
-	Instead, they accept an object called a "Lens".
+	Instead, they accept an object called a "Lens". And by the way, you'll
+	probably have a few singleton lens classes to support unusual needs.
 	"""
 	def string_for_browser(self, n:NATIVE) -> str:
 		""" Convert a native Python value to a string for the web. """
@@ -64,12 +65,9 @@ class Lens:
 	
 
 class StringLens(Lens):
-	""" Simple bits for usual stringy cases: """
-	def __init__(self, *, default=''):
-		self.__default = default
-	
+	""" Simple singleton for the usual stringy cases: """
 	def string_for_browser(self, n: NATIVE) -> str:
-		return self.__default if n is None else str(n)
+		return '' if n is None else str(n)
 	
 	def native_from_string(self, s: str) -> NATIVE:
 		return s.strip()
@@ -121,6 +119,26 @@ class Nullable(Lens):
 
 NULLABLE = Nullable(BLANKABLE)
 
+
+class DateLens(StringLens):
+	"""
+	Quite often you'll want to accept date input. Since all modern browsers
+	support <input type="date".../> it's only necessary to have some horse-
+	sense on the back side. Maybe there's some reasonable generalization
+	but for now this will just have to serve as a springboard for creativity.
+	
+	The implementation inheritance here is thanks to happy coincidence.
+	"""
+	def native_from_string(self, s: str) -> NATIVE:
+		""" Anyone recall a nice date-parsing routine out there? """
+		m = re.fullmatch(r'\s*(\d{4})-(1[012]|0\d)-([012]\d|3[01])\s*', s)
+		if m:
+			try: return datetime.date(*map(int, m.groups()))
+			except ValueError as ve: raise ValidationError(*ve.args)
+		else: return None
+
+DATE = DateLens() # Because singleton.
+
 class ChoiceLens(Lens):
 	"""
 	When the domain of a field ranges over a small finite set of values,
@@ -145,7 +163,7 @@ def tag(kind, attributes:dict, content):
 	if content is None: return ["<",kind,a_text,"/>"]
 	else: return ["<",kind,a_text,'>',content,"</",kind,">"]
 
-class Formlet:
+class Formlet(Servlet):
 	"""
 	Lots of application forms exist to create or update simple records.
 	This class should provide a comfortable functional basis for building
@@ -173,7 +191,7 @@ class Formlet:
 		"""
 		raise NotImplementedError(type(self))
 	
-	def display(self, fields:dict, errors:dict) -> implementation.Response:
+	def display(self, fields:dict, errors:dict) -> Response:
 		"""
 		Display a form, with the HTML bits corresponding to the fields,
 		and potentially with any errors from a failed attempt. Field-specific
@@ -198,7 +216,7 @@ class Formlet:
 		"""
 		pass
 	
-	def save(self, native:dict, request:implementation.Request) -> implementation.Response:
+	def save(self, native:dict, request:Request) -> Response:
 		"""
 		Attempt to save the validated results of your form POSTing.
 		If anything goes wrong, raise SaveError with an errors dictionary.
@@ -207,7 +225,7 @@ class Formlet:
 		"""
 		raise NotImplementedError(type(self))
 	
-	def do_GET(self, request:implementation.Request) -> implementation.Response:
+	def do_GET(self, request:Request) -> Response:
 		def get(key): # Do this to support both incomplete mappings and sqlite Row objects
 			try: return native[key]
 			except KeyError: return None
@@ -216,11 +234,11 @@ class Formlet:
 		intermediate = {key: elt.n2i(get(key)) for key, elt in self.elements.items()}
 		return self._display(intermediate, {})
 	
-	def _display(self, intermediate:dict, errors:dict) -> implementation.Response:
+	def _display(self, intermediate:dict, errors:dict) -> Response:
 		fields = {key: elt.i2h(key, intermediate[key]) for key, elt in self.elements.items()}
 		return self.display(fields, errors)
 	
-	def do_POST(self, request:implementation.Request) -> implementation.Response:
+	def do_POST(self, request:Request) -> Response:
 		self.request = request
 		intermediate = {}
 		native = {}
@@ -257,7 +275,7 @@ class FormElement:
 		""" Return intermediate data corresponding to given native value. """
 		raise NotImplementedError(type(self))
 	
-	def p2i(self, name:str, POST:implementation.Bag):
+	def p2i(self, name:str, POST:Bag):
 		"""
 		Return intermediate data coming in from POST. This should not fail
 		(so long as the browser plays nice) and it must be possible to
@@ -291,7 +309,7 @@ class Entry(FormElement):
 
 	def n2i(self, value): return self.lens.string_for_browser(value)
 	
-	def p2i(self, name: str, POST: implementation.Bag):
+	def p2i(self, name: str, POST: Bag):
 		intermediate = POST.get(name, '')
 		if self.maxlength and len(intermediate) > self.maxlength:
 			intermediate = intermediate[:self.maxlength]
@@ -360,7 +378,7 @@ class Pick(FormElement):
 		if self.multiple: return set(map(self.lens.string_for_browser, value))
 		else: return self.lens.string_for_browser(value)
 	
-	def p2i(self, name: str, POST: implementation.Bag):
+	def p2i(self, name: str, POST: Bag):
 		if self.multiple: return POST.get_list(name)
 		else: return POST[name]
 	
