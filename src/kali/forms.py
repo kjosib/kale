@@ -358,6 +358,7 @@ class Pick(FormElement):
 		if self.multiple:
 			test = intermediate.__contains__
 		else:
+			assert isinstance(intermediate, str), repr(intermediate)
 			test = intermediate.__eq__
 			if not (self.required and intermediate):
 				yield '', '', False
@@ -437,7 +438,7 @@ class ListLens(ChoiceLens):
 		return ((x,x) for x in self.options)
 	
 	def string_for_browser(self, n: NATIVE) -> str:
-		return n
+		return '' if n is None else n
 	
 	def native_from_string(self, s: str) -> NATIVE:
 		if not s: return None
