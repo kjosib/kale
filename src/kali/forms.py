@@ -305,7 +305,7 @@ class Entry(FormElement):
 		""" **kwargs become tag attributes. Use _class to set the CSS class. maxlength is enforced. """
 		self.maxlength = int(kwargs.get('maxlength', 0))
 		self.lens = lens
-		self.attributes = {k:str(v).lstrip('_') for k,v in kwargs.items()}
+		self.attributes = {k.lstrip('_'):str(v) for k,v in kwargs.items()}
 
 	def n2i(self, value): return self.lens.string_for_browser(value)
 	
@@ -350,7 +350,7 @@ class Pick(FormElement):
 		self.lens = lens
 		self.required = required
 		self.multiple = multiple
-		self.attributes = {k:str(v).lstrip('_') for k,v in kwargs.items()}
+		self.attributes = {k.lstrip('_'):str(v) for k,v in kwargs.items()}
 		if multiple: self.attributes['multiple'] = ''
 	
 	def option_tags(self, intermediate) -> Iterable[Tuple[str, str, bool]]:
