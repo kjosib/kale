@@ -304,7 +304,7 @@ class Template(AbstractTemplate):
 				try: item = x[keyword]
 				except KeyError: item = '{'+keyword+'}'
 				if isinstance(item, str): item = html.escape(item)
-				return item
+				return '' if item is None else item
 			return fn
 		def preprocess(keyword:str, fn): return lambda x:html.escape(fn(x[keyword]))
 		for match in Template.PATTERN.finditer(text):
