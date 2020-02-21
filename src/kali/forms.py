@@ -144,14 +144,14 @@ class ChoiceLens(Lens):
 	When the domain of a field ranges over a small finite set of values,
 	you typically have a terse internal value and a verbose human-readable
 	label for each item. To the methods of `class Lens`, let's add a method
-	to iterate over (string-typed, browser-facing) value-label pairs, and to
-	get a label corresponding to a value.
+	to iterate over (string-typed, browser-facing) value-label pairs.
 	"""
 	
 	def string_pairs(self):
-		raise NotImplementedError(type(self))
-	
-	def label_for(self, n:NATIVE) -> str:
+		"""
+		For any valid (non-None) native-typed value `n`, it is REQUIRED that:
+		`self.string_for_browser(n) in [x for x,y in self.string_pairs()]`
+		"""
 		raise NotImplementedError(type(self))
 
 def tag(kind, attributes:dict, content):
@@ -409,9 +409,6 @@ class EnumLens(ChoiceLens):
 	
 	def string_pairs(self): yield from self.__pairs
 	
-	def label_for(self, n: int) -> str:
-		return '' if n is None else str(self.options[n - self.base])
-	
 	def string_for_browser(self, n: NATIVE) -> str:
 		return '' if n is None else str(n-self.base)
 	
@@ -420,4 +417,30 @@ class EnumLens(ChoiceLens):
 		offset = int(s)
 		if 0 <= offset < len(self.options): return offset + self.base
 		else: raise ValidationError('out of range (How did you do that?)')
+	
+class ListLens(ChoiceLens):
+	"""
+	Specialized to choose among a fixed list of (generally short) strings.
+	This is appropriate when the intended audience is familiar with the
+	meanings of the short strings in context. For example:
+	
+	metasyntactic_variable_picker = Pick(
+		lens=ListLens(['FOO', 'BAR', 'BAZ', 'QUUX'],
+		required='See https://en.wikipedia.org/wiki/Metasyntactic_variable')
+	
+	"""
+	def __init__(self, options:Sequence[str]):
+		assert all(isinstance(x, str) for x in options)
+		self.options = options
+	
+	def string_pairs(self):
+		return ((x,x) for x in self.options)
+	
+	def string_for_browser(self, n: NATIVE) -> str:
+		return n
+	
+	def native_from_string(self, s: str) -> NATIVE:
+		if not s: return None
+		if s in self.options: return s
+		else: raise ValidationError('invalid selection')
 	
