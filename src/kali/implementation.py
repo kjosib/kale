@@ -529,7 +529,7 @@ class Response:
 	<body> <h1>{title}</h1>
 	{.body}
 	<hr/>
-	<pre style="background:black;color:green;padding:20px;font-size:15px">Python Version: {version}\r\nKali version 0.0.4</pre>
+	<pre style="background:black;color:green;padding:20px;font-size:15px">Python Version: {version}\r\nKali version 0.0.5</pre>
 	</body></html>
 	""")
 	

@@ -8,7 +8,7 @@ setuptools.setup(
 	name='kali',
 	author='Ian Kjos',
 	author_email='kjosib@gmail.com',
-	version='0.0.4',
+	version='0.0.5',
 	packages=['kali',],
 	package_dir = {'': 'src'},
 	description='Simple, reliable, single-threaded HTTP service in Python. Aimed at serving web application to localhost as alternative to desktop application development.',
