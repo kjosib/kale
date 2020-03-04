@@ -163,7 +163,7 @@ class Request:
 		self.protocol = protocol
 		self.headers = headers
 		self.url = urllib.parse.urlparse(uri)
-		self.path = self.url.path[1:].split('/') # Non-empty paths always start with a slash, so skip it.
+		self.path = urllib.parse.unquote(self.url.path)[1:].split('/') # Non-empty paths always start with a slash, so skip it.
 		# The following bits collaborate with the Router class to provide a semblance
 		# of a virtual path hierarchy into which you can mount functionality.
 		self.mount_depth = 0 # How deep is the root of the mount which is handling this request?
