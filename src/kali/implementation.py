@@ -8,10 +8,14 @@ __all__ = [
 	'TemplateFolder', 'Servlet',
 ]
 
-import socket, urllib.parse, random, sys, html, traceback, re, operator, os, pathlib
+import socket, urllib.parse, random, sys, html, traceback, re, operator, os, pathlib, logging
 from typing import List, Dict, Iterable, Callable, Optional, Mapping
+from . import version
 
 class ProtocolError(Exception): """ The browser did something wrong. """
+
+log = logging.getLogger('kali')
+log.setLevel(logging.INFO)
 
 def serve_http(handle, *, port=8080, address='127.0.0.1', start:Optional[str]=''):
 	"""
@@ -28,38 +32,36 @@ def serve_http(handle, *, port=8080, address='127.0.0.1', start:Optional[str]=''
 		for code, reason in Response.REASON.items()
 	}
 	def reply(response:Response):
-		try:
-			client.sendall(response.content)
-			print(log_lines[response.code])
-		except:
-			print("Failed to send.")
-			traceback.print_exc()
+		try: client.sendall(response.content)
+		except: log.exception("Failed to send.")
+		else: log.info(log_lines[response.code])
 	
 	server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 	server.bind((address, port))
 	server.listen(1)
 	if start is not None:
 		os.startfile('http://%s:%d/%s'%(address, port, start.lstrip('/')))
-	print("Listening...")
+	log.info("Listening...")
 	alive = True
 	while alive:
 		(client, address) = server.accept()
-		print("Accepted...")
+		log.info("Accepted...")
 		try: request = Request.from_reader(ClientReader(client))
-		except socket.timeout: print("Timed out.") # No reply; just hang up and move on.
-		except ProtocolError as pe:
-			print("Protocol Error", pe.args)
-			reply(Response.generic(repr(pe.args) if pe.args else None, code=400))
+		except socket.timeout: log.info("Timed out.") # No reply; just hang up and move on.
+		except ProtocolError:
+			log.warning("Protocol Error")
+			reply(Response.generic(code=400))
 		else:
 			try:
 				response = handle(request)
 				if not isinstance(response, Response): response = Response(response)
 				alive = not response.shut_down
 			except:
+				log.exception("During %s %s", request.command, request.uri)
 				response = Response.from_exception(request)
 			reply(response)
 		client.shutdown(socket.SHUT_RDWR)
-	print("Shutting Down.")
+	log.info("Shutting Down.")
 
 class ClientReader:
 	"""
@@ -173,15 +175,16 @@ class Request:
 		if headers.get('content-type') == 'application/x-www-form-urlencoded':
 			self.POST.update(urllib.parse.parse_qsl(str(payload, 'UTF-8'), keep_blank_values=True))
 		elif payload is not None:
-			print("Command:", command, uri, protocol)
-			print("Headers:", self.headers)
-			print('GET:', self.GET)
-			print("Payload:", payload)
+			# TODO: If the browser sends a payload of any other sort, I'd like to figure out how to read it.
+			log.debug("Command: %s %s %s", command, uri, protocol)
+			log.debug("Headers: %r", self.headers)
+			log.debug('GET: %r', self.GET)
+			log.debug("Payload: %r", payload)
 	
 	@staticmethod
 	def from_reader(reader:ClientReader) -> "Request":
 		command, uri, protocol = str(reader.read_line_bytes(), 'iso8859-1').split()
-		print(' -> ', command, uri)
+		log.info(' -> %s %s', command, uri)
 		headers = Bag()
 		while not reader.exhausted():
 			line = reader.read_line_bytes()
@@ -529,7 +532,7 @@ class Response:
 	<body> <h1>{title}</h1>
 	{.body}
 	<hr/>
-	<pre style="background:black;color:green;padding:20px;font-size:15px">Python Version: {version}\r\nKali version 0.0.5</pre>
+	<pre style="background:black;color:green;padding:20px;font-size:15px">Python Version: {python_version}\r\nKali version {kali_version}</pre>
 	</body></html>
 	""")
 	
@@ -576,7 +579,8 @@ class Response:
 	@staticmethod
 	def generic(body=None, *, title=None, code:int=200) -> "Response":
 		return Response(Response.TEMPLATE_GENERIC(
-			version=str(sys.version),
+			python_version=str(sys.version),
+			kali_version=version.__version__,
 			title=title or Response.REASON[code],
 			body=body or "No further information.",
 		), code=code)

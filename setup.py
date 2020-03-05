@@ -4,11 +4,13 @@ Packaging script for PyPI.
 
 import setuptools
 
+exec(open('src/kali/version.py').read())
+
 setuptools.setup(
 	name='kali',
 	author='Ian Kjos',
 	author_email='kjosib@gmail.com',
-	version='0.0.5',
+	version=__version__,
 	packages=['kali',],
 	package_dir = {'': 'src'},
 	description='Simple, reliable, single-threaded HTTP service in Python. Aimed at serving web application to localhost as alternative to desktop application development.',

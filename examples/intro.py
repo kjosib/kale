@@ -14,6 +14,9 @@ That happens automatically if you do any of:
 Let's get to it, then:
 """
 
+import logging # kali uses python's logging library, but leaves configuration
+logging.basicConfig() # up to the application. No big deal if you forget.
+
 from kali import Response, serve_http, Router
 
 # Any web application, you're going to be serving up different pages.
