@@ -519,7 +519,7 @@ class Response:
 		'Ack', 'ARGH', 'Aw, SNAP', 'Blargh', 'Blasted Thing', 'Confound it',
 		'Crud', 'Oh crud', 'Curses', 'Gack', 'Dag Blammit', 'Dag Nabbit',
 		'Darkness Everywhere', 'Drat', 'Fiddlesticks', 'Flaming Flamingos',
-		'Good Grief', 'Golly Gee Willikers', "Oh, Snot",
+		'Good Grief', 'Golly Gee Willikers', "Oh, Snot", "Oh, Sweet Cheese and Crackers",
 		'Great Googly Moogly', "Great Scott", 'Jeepers', "Heavens to Betsy", "Crikey",
 		"Cheese and Rice all Friday", "Infernal Tarnation", "Mercy",
 		'[Insert Curse Word Here]', 'Nuts', 'Oh Heavens', 'Rats', 'Wretch it all',
