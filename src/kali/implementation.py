@@ -5,12 +5,16 @@ ordinary desktop application development. See http://github.com/kjosib/kali
 
 __all__ = [
 	'serve_http', 'Request', 'Template', 'Response', 'Router', 'StaticFolder',
-	'TemplateFolder', 'Servlet',
+	'TemplateFolder', 'Servlet', 'FileUpload',
 ]
 
 import socket, urllib.parse, random, sys, html, traceback, re, operator, os, pathlib, logging
-from typing import List, Dict, Iterable, Callable, Optional, Mapping
+from typing import List, Dict, Iterable, Callable, Optional, Mapping, NamedTuple
 from . import version
+
+HTTP_DEFAULT_ENCODING = 'iso8859-1'
+HTTP_EOL = b'\r\n'
+LEN_HTTP_EOL = len(HTTP_EOL)
 
 class ProtocolError(Exception): """ The browser did something wrong. """
 
@@ -60,7 +64,8 @@ def serve_http(handle, *, port=8080, address='127.0.0.1', start:Optional[str]=''
 				log.exception("During %s %s", request.command, request.uri)
 				response = Response.from_exception(request)
 			reply(response)
-		client.shutdown(socket.SHUT_RDWR)
+		try: client.shutdown(socket.SHUT_RDWR)
+		except OSError: pass
 	log.info("Shutting Down.")
 
 class ClientReader:
@@ -159,7 +164,7 @@ class Request:
 	To promote testability, the constructor accepts native python data.
 	The conversion from network binary blob happens in a static method that RETURNS a request.
 	"""
-	def __init__(self, command, uri, protocol, headers:Bag, payload):
+	def __init__(self, command, uri, protocol, headers:Bag, payload:bytes):
 		self.command = command
 		self.uri = uri
 		self.protocol = protocol
@@ -172,24 +177,29 @@ class Request:
 		self.args = () # Actual parameters to mount-path wildcards. Filled in for Router.delegate(...) mounts.
 		self.GET = Bag(urllib.parse.parse_qsl(self.url.query, keep_blank_values=True))
 		self.POST = Bag()
-		if headers.get('content-type') == 'application/x-www-form-urlencoded':
+		content_type = headers.get('content-type')
+		if content_type == 'application/x-www-form-urlencoded':
 			self.POST.update(urllib.parse.parse_qsl(str(payload, 'UTF-8'), keep_blank_values=True))
-		elif payload is not None:
+		elif content_type is not None and content_type.startswith("multipart/form-data;"):
+			try: boundary_parameter = bytes(content_type.split('boundary=')[1], HTTP_DEFAULT_ENCODING)
+			except: raise ProtocolError()
+			self.POST.update(analyze_multipart_form_data(boundary_parameter, payload))
+			pass
+		elif payload:
 			# TODO: If the browser sends a payload of any other sort, I'd like to figure out how to read it.
-			log.debug("Command: %s %s %s", command, uri, protocol)
-			log.debug("Headers: %r", self.headers)
-			log.debug('GET: %r', self.GET)
-			log.debug("Payload: %r", payload)
+			log.warning("content-type was %s", headers.get('content-type'))
+			log.warning("Command: %s %s %s", command, uri, protocol)
+			log.warning("Payload: %r", payload)
 	
 	@staticmethod
 	def from_reader(reader:ClientReader) -> "Request":
-		command, uri, protocol = str(reader.read_line_bytes(), 'iso8859-1').split()
+		command, uri, protocol = str(reader.read_line_bytes(), HTTP_DEFAULT_ENCODING).split()
 		log.info(' -> %s %s', command, uri)
 		headers = Bag()
 		while not reader.exhausted():
 			line = reader.read_line_bytes()
 			if line:
-				key, value = str(line, 'iso8859-1').split(': ',2)
+				key, value = str(line, HTTP_DEFAULT_ENCODING).split(': ', 2)
 				headers[key.lower()] = value
 			else:
 				break
@@ -243,6 +253,49 @@ class Request:
 			else: better.append(elt)
 		if path[-1] in ('', '.') and better: better.append('')
 		return '/' + '/'.join(better)
+
+
+def analyze_multipart_form_data(boundary_parameter, payload:bytes):
+	"""
+	See https://tools.ietf.org/html/rfc7578 to understand what this is doing.
+	And yes it might be simpler to exploit a MIME library.
+	The RFC is what I actually found when looking into this.
+	:yield: pairs of key/value, where the values may be file uploads.
+	"""
+	for part in payload.split(b'--' + boundary_parameter):
+		if not part: continue
+		if part == b'--'+HTTP_EOL: continue
+		if not part.startswith(HTTP_EOL): raise ProtocolError
+		if not part.endswith(HTTP_EOL): raise ProtocolError
+		yield analyze_single_part(part[LEN_HTTP_EOL:-LEN_HTTP_EOL])
+
+def analyze_single_part(part:bytes):
+	"""
+	Here we have a similar problem to the original ClientReader, but now it's
+	line-at-a-time.
+	"""
+	head, body = part.split(HTTP_EOL+HTTP_EOL, 1)
+	name, filename, content_type = None, None, 'text/plain'
+	for line in head.split(HTTP_EOL):
+		k,v = str(line, HTTP_DEFAULT_ENCODING).split(': ', 1)
+		if k == 'Content-Disposition': name, filename = analyze_disposition(v)
+		elif k == 'Content-Type': content_type = v
+		else: raise ProtocolError(k)
+	if filename is None: return name, str(body, HTTP_DEFAULT_ENCODING)
+	else: return name, FileUpload(filename, content_type, body)
+
+def analyze_disposition(disposition:str):
+	m = re.fullmatch(r'form-data; name="([^"]*)"; filename="([^"]*)"', disposition)
+	if m: return m.groups()
+	m = re.fullmatch(r'form-data; name="([^"]*)"', disposition)
+	if m: return m.group(1), None
+	log.warning("Odd Content-Disposition: %s", disposition)
+	raise ProtocolError()
+
+class FileUpload(NamedTuple):
+	filename: str
+	content_type: str
+	content: bytes
 
 class AbstractTemplate:
 	"""
