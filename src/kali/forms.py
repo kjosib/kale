@@ -26,7 +26,10 @@ __all__ = [
 
 import html, re, datetime
 from typing import Dict, Iterable, Tuple, Sequence, TypeVar, Pattern
-from .implementation import Request, Response, Servlet, Bag
+from .utility import Bag
+from .requesting import Request
+from .responding import Response
+from .implementation import Servlet
 
 NATIVE = TypeVar('NATIVE')
 
