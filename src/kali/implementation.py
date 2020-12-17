@@ -10,6 +10,7 @@ __all__ = [
 
 import socket, urllib.parse, random, sys, html, traceback, re, operator, os, pathlib, logging
 from typing import List, Dict, Iterable, Callable, Optional, Mapping, NamedTuple
+import traceback
 from . import version
 
 HTTP_DEFAULT_ENCODING = 'iso8859-1'
@@ -21,7 +22,7 @@ class ProtocolError(Exception): """ The browser did something wrong. """
 log = logging.getLogger('kali')
 log.setLevel(logging.INFO)
 
-def serve_http(handle, *, port=8080, address='127.0.0.1', start:Optional[str]=''):
+def serve_http(handle, *, port=8080, address='127.0.0.1', start:Optional[str]='', timeout=1):
 	"""
 	This is the main-loop entry point for kali.
 	:param handle: function from `Request` to `Response` or suitable page data.
@@ -50,10 +51,10 @@ def serve_http(handle, *, port=8080, address='127.0.0.1', start:Optional[str]=''
 	while alive:
 		(client, address) = server.accept()
 		log.info("Accepted...")
-		try: request = Request.from_reader(ClientReader(client))
+		try: request = Request.from_reader(ClientReader(client, timeout=timeout))
 		except socket.timeout: log.info("Timed out.") # No reply; just hang up and move on.
-		except ProtocolError:
-			log.warning("Protocol Error")
+		except ProtocolError as pe:
+			log.warning("Protocol Error: %s %s", pe, traceback.format_exc())
 			reply(Response.generic(code=400))
 		else:
 			try:
@@ -74,13 +75,17 @@ class ClientReader:
 	from a socket in light of the particular difficulties posed by the
 	requirement to operate with a single thread.
 	"""
-	def __init__(self, client):
+	def __init__(self, client, timeout):
 		self.client = client
-		client.settimeout(1)
-		self.blob = client.recv(4096) # Try to pick up the entire request in one (notional) packet.
+		client.settimeout(timeout)
+		self.blob = self.get_one_packet() # Try to pick up the entire request in one (notional) packet.
 		self.start = 0
 		self.waited = False
-	
+
+	def get_one_packet(self) -> bytes:
+		packet = self.client.recv(4096)
+		return packet
+
 	def go_find(self, what:bytes) -> int:
 		assert isinstance(what, bytes)
 		try: return self.blob.index(what, self.start)
@@ -95,7 +100,7 @@ class ClientReader:
 		packets = [block]
 		size = len(block)
 		while True:
-			try: block = self.client.recv(4096)
+			try: block = self.get_one_packet()
 			except socket.timeout: break
 			if block:
 				packets.append(block)
@@ -109,11 +114,16 @@ class ClientReader:
 		end = self.go_find(b'\r\n')
 		start = self.start
 		self.start = end + 2
+		log.debug(str(self.blob[start:end], HTTP_DEFAULT_ENCODING))
 		return self.blob[start:end]
 	
 	def read_count_bytes(self, count:int) -> bytes:
 		end = self.start + count
-		if end > len(self.blob): raise ProtocolError()
+		if end > len(self.blob):
+			if not self.waited:
+				self.collect_more_packets()
+				end = count
+			if end > len(self.blob): raise ProtocolError(end, len(self.blob))
 		block = self.blob[self.start:end]
 		self.start = end
 		return block
@@ -199,8 +209,12 @@ class Request:
 		while not reader.exhausted():
 			line = reader.read_line_bytes()
 			if line:
-				key, value = str(line, HTTP_DEFAULT_ENCODING).split(': ', 2)
-				headers[key.lower()] = value
+				try:
+					key, value = str(line, HTTP_DEFAULT_ENCODING).split(': ', 2)
+					headers[key.lower()] = value
+				except:
+					log.warning("Bogus Request Line: %r", line)
+					raise
 			else:
 				break
 		# If at this point a Content-Length header has arrived, that should tell the max number of bytes to expect as payload.
