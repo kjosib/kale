@@ -30,6 +30,8 @@ HTTP_DEFAULT_ENCODING = 'iso8859-1'
 HTTP_EOL = b'\r\n'
 LEN_HTTP_EOL = len(HTTP_EOL)
 
+MAX_UPLOAD_SIZE = 10_000_000
+
 class ProtocolError(Exception): """ The browser did something wrong. """
 
 log = logging.getLogger('kali')
@@ -120,7 +122,7 @@ class ClientReader:
 				packets.append(block)
 				size += len(block)
 			else: break
-			if size > 1_000_000: raise ProtocolError()
+			if size > MAX_UPLOAD_SIZE: raise ProtocolError()
 		self.blob = b''.join(packets)
 		self.start = 0
 
